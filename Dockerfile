@@ -33,7 +33,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/auditrail-worker /usr/local/bin/auditrail-worker
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD pgrep auditrail-worker > /dev/null || exit 1
+  CMD sh -c 'ls /proc/*/exe 2>/dev/null | xargs -I{} readlink {} 2>/dev/null | grep -q auditrail-worker' || exit 1
 ENTRYPOINT ["/usr/local/bin/auditrail-worker"]
 
 # ---- cli ----

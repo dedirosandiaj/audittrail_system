@@ -157,3 +157,4 @@ Push a new commit to `main`. In Coolify → resource → **Deploy** (or enable
 | `429 Too Many Requests`                          | Raise `RATE_LIMIT_*` env vars.                                      |
 | `401 invalid signature`                          | Client clock skew > `MAX_CLOCK_SKEW`; sync NTP.                     |
 | `409 replayed nonce`                             | Client is re-using nonces; generate a fresh UUID per request.       |
+| `map has no entry for key "Health"` during deploy | Compose service is missing a `healthcheck:` block; Coolify's rolling update needs `.State.Health.Status`. Make sure both `api` and `worker` declare `healthcheck:` explicitly (the Dockerfile-level `HEALTHCHECK` alone is NOT enough under Compose). |
