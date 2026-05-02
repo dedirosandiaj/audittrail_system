@@ -21,6 +21,7 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:24-alpine
+    cap_add: [SYS_NICE]
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     ports:
