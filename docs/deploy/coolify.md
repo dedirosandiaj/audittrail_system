@@ -66,6 +66,13 @@ git push -u origin main
 3. **Compose file path:** `docker-compose.coolify.yml`
 4. **Build pack:** `Docker Compose` (default).
 
+> ⚠️ **Do NOT choose the "Dockerfile" buildpack.** Auditrail needs multiple
+> services (api + worker + nats + redis + clickhouse) which only the Compose
+> buildpack can orchestrate. The Dockerfile buildpack would build a single
+> container, skip every `healthcheck:` defined in the compose file, and the
+> rolling update will fail with
+> `template: :1:13: executing "" at <.State.Health.Status>: map has no entry for key "Health"`.
+
 ## 4. Set Environment Variables
 
 In the resource's **Environment Variables** tab, add:
@@ -157,4 +164,5 @@ Push a new commit to `main`. In Coolify → resource → **Deploy** (or enable
 | `429 Too Many Requests`                          | Raise `RATE_LIMIT_*` env vars.                                      |
 | `401 invalid signature`                          | Client clock skew > `MAX_CLOCK_SKEW`; sync NTP.                     |
 | `409 replayed nonce`                             | Client is re-using nonces; generate a fresh UUID per request.       |
-| `map has no entry for key "Health"` during deploy | Compose service is missing a `healthcheck:` block; Coolify's rolling update needs `.State.Health.Status`. Make sure both `api` and `worker` declare `healthcheck:` explicitly (the Dockerfile-level `HEALTHCHECK` alone is NOT enough under Compose). |
+| `map has no entry for key "Health"` during deploy | Either (a) the Coolify resource is set to **Dockerfile** buildpack instead of **Docker Compose** — switch it in *Configuration → Build Pack*; or (b) a Compose service is missing a `healthcheck:` block. Coolify's rolling update needs `.State.Health.Status`; image-level `HEALTHCHECK` alone is NOT enough under Compose. |
+| pgx error `cannot parse "POSTGRES_URL is required"` | The env var was not set in Coolify's Environment Variables tab, and Coolify's compose parser treated the `${VAR:?message}` sentinel as a *default value* and injected the message literally. Set `POSTGRES_URL` (and `ADMIN_MASTER_TOKEN`) to real values in Coolify; do not rely on `:?` sentinels in the Coolify compose file. |

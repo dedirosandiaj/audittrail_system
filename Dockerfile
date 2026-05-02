@@ -15,18 +15,6 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/auditrail-api     
  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/auditrail-worker  ./cmd/worker  \
  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/auditrail-cli     ./cmd/cli
 
-# ---- api ----
-FROM alpine:3.20 AS api
-RUN apk add --no-cache ca-certificates tzdata wget
-WORKDIR /app
-COPY --from=build /out/auditrail-api /usr/local/bin/auditrail-api
-COPY --from=build /out/auditrail-cli /usr/local/bin/auditrail-cli
-COPY migrations /app/migrations
-EXPOSE 8080
-HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
-ENTRYPOINT ["/usr/local/bin/auditrail-api"]
-
 # ---- worker ----
 FROM alpine:3.20 AS worker
 RUN apk add --no-cache ca-certificates tzdata
@@ -41,3 +29,19 @@ FROM alpine:3.20 AS cli
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/auditrail-cli /usr/local/bin/auditrail
 ENTRYPOINT ["/usr/local/bin/auditrail"]
+
+# ---- api ----
+# NOTE: `api` is intentionally the LAST stage so that a plain `docker build .`
+# (e.g. Coolify's "Dockerfile" buildpack, which does not pass --target) yields
+# the HTTP API image — the only stage that has a real HEALTHCHECK and an
+# exposed port. Compose builds still pick stages explicitly via `target:`.
+FROM alpine:3.20 AS api
+RUN apk add --no-cache ca-certificates tzdata wget
+WORKDIR /app
+COPY --from=build /out/auditrail-api /usr/local/bin/auditrail-api
+COPY --from=build /out/auditrail-cli /usr/local/bin/auditrail-cli
+COPY migrations /app/migrations
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/auditrail-api"]

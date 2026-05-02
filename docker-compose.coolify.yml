@@ -68,12 +68,17 @@ services:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       HTTP_ADDR: ":8080"
-      POSTGRES_URL: ${POSTGRES_URL:?POSTGRES_URL is required}
+      # NOTE: do NOT use `${VAR:?error}` sentinels here. Coolify's compose
+      # parser treats the text after `:?` as a default VALUE and injects it
+      # literally when the Coolify env var is unset, e.g. you end up with
+      # POSTGRES_URL="POSTGRES_URL is required". Required-ness is enforced
+      # in Go via `env:"...,required"` tags in internal/config/config.go.
+      POSTGRES_URL: ${POSTGRES_URL}
       NATS_URL: nats://nats:4222
       REDIS_ADDR: redis:6379
       CLICKHOUSE_ADDR: clickhouse:9000
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-auditrail}
-      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN:?ADMIN_MASTER_TOKEN is required}
+      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN}
       MAX_CLOCK_SKEW: ${MAX_CLOCK_SKEW:-5m}
       NONCE_TTL: ${NONCE_TTL:-10m}
       RATE_LIMIT_AUDIT:  ${RATE_LIMIT_AUDIT:-600}
@@ -110,12 +115,12 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      POSTGRES_URL: ${POSTGRES_URL:?POSTGRES_URL is required}
+      POSTGRES_URL: ${POSTGRES_URL}
       NATS_URL: nats://nats:4222
       REDIS_ADDR: redis:6379
       CLICKHOUSE_ADDR: clickhouse:9000
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-auditrail}
-      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN:?ADMIN_MASTER_TOKEN is required}
+      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN}
     # Same reason as the `api` service: Coolify's rolling update requires
     # `.State.Health.Status` to exist. We probe the worker binary via
     # /proc (no extra packages needed — `pgrep` is NOT in alpine:3.20).
