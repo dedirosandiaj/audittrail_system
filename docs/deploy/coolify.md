@@ -93,6 +93,49 @@ In the resource's **Environment Variables** tab, add:
 
 Mark `POSTGRES_URL` and `ADMIN_MASTER_TOKEN` as **secret** in Coolify.
 
+### Generating a secure `ADMIN_MASTER_TOKEN`
+
+`ADMIN_MASTER_TOKEN` guards every admin endpoint (`/v1/admin/applications*`).
+If it leaks, anyone can register tenants, rotate keys, or revoke apps. **Only
+generate it with a CSPRNG** — never type it by hand, never keyboard-mash it.
+
+Pick ONE of these and paste the output into the Coolify env var:
+
+```bash
+# A. 64 hex chars (256 bits) — recommended
+openssl rand -hex 32
+
+# B. URL-safe base64 (43 chars, 256 bits)
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+
+# C. no openssl available
+head -c 32 /dev/urandom | xxd -p -c 256
+```
+
+> ❌ **Do NOT** use strings like `365395937598uifhsjkhfjkshf73y8753y8rhiufhjshf`
+> — they *look* long but are keyboard-mashed patterns with low entropy. A real
+> random token looks like
+> `e9b4c2f0a18d73f62c5b07bb3e1a4d99a46f0c1e3d7b845a91cf0a2e6b84d77f`.
+
+**Handling rules for `ADMIN_MASTER_TOKEN` and every `secret_key` returned by
+`/v1/admin/applications`:**
+
+- Store only in a password manager or secret vault (1Password, Bitwarden,
+  Vault). Never in git, `.env` committed to repo, chat, email, screenshots,
+  or tickets.
+- If it appears in **any** medium outside the vault (chat paste, shared log,
+  screen share), consider it compromised and rotate immediately.
+- Rotate `ADMIN_MASTER_TOKEN`: update the Coolify env var → redeploy. Rotate a
+  tenant's keys: `POST /v1/admin/applications/{id}/rotate-key`.
+- After rotation, verify the old token is rejected:
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -X GET https://ats.ucentric.id/v1/admin/applications \
+    -H "X-Admin-Token: <old-token>"    # expected: 401
+  ```
+
+> Rule of thumb: **"if a human typed it, it's not a secret."**
+
 ## 5. Configure the public domain
 
 1. In Coolify, open the `api` service.

@@ -32,7 +32,7 @@ set -euo pipefail
 
 API_KEY="ak_live_xxx"
 SECRET="sk_live_xxx"
-BASE_URL="https://audit.example.com"
+BASE_URL="https://ats.ucentric.id"
 
 BODY='{
   "event_id": "'"$(uuidgen | tr A-Z a-z)"'",

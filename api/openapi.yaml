@@ -9,10 +9,10 @@ info:
   contact:
     name: Auditrail
 servers:
+  - url: https://ats.ucentric.id
+    description: Production (Audit Trail System)
   - url: http://localhost:8080
     description: Local development
-  - url: https://api.auditrail.io
-    description: Production
 
 tags:
   - name: Ingestion

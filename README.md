@@ -99,7 +99,13 @@ curl http://localhost:8080/v1/events?action=user.login \
 
 ## Integrations
 
-See [`docs/integrations/`](./docs/integrations/) for per-language guides:
+Production base URL: **`https://ats.ucentric.id`** (Audit Trail System).
+
+**→ Start here:** [`docs/integrations/README.md`](./docs/integrations/README.md) — end-to-end
+onboarding: provision an application, sign a request, send your first event,
+query events, production best practices, error reference.
+
+Language-specific examples:
 
 - [JavaScript (browser & Node.js)](./docs/integrations/javascript.md)
 - [Python](./docs/integrations/python.md)
