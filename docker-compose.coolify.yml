@@ -1,0 +1,111 @@
+# Coolify production compose file.
+#
+# Design: Postgres is EXTERNAL (your managed DB).
+# ClickHouse, NATS JetStream, Redis run here with persistent volumes managed by Coolify.
+# API + Worker are built from the project Dockerfile.
+#
+# All sensitive and environment-specific values MUST be set as Coolify
+# "Environment Variables" (NOT committed to the repo).
+#
+# Required Coolify env vars:
+#   POSTGRES_URL            postgres://user:pass@host:5432/db?sslmode=require
+#   ADMIN_MASTER_TOKEN      long random string
+#
+# Optional:
+#   APP_ENV=production
+#   LOG_LEVEL=info
+#   RATE_LIMIT_AUDIT / RATE_LIMIT_ERROR / RATE_LIMIT_LOG / RATE_LIMIT_METRIC
+#   MAX_CLOCK_SKEW=5m
+#   NONCE_TTL=10m
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./migrations/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: api
+    depends_on:
+      nats:  { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HTTP_ADDR: ":8080"
+      POSTGRES_URL: ${POSTGRES_URL:?POSTGRES_URL is required}
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-auditrail}
+      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN:?ADMIN_MASTER_TOKEN is required}
+      MAX_CLOCK_SKEW: ${MAX_CLOCK_SKEW:-5m}
+      NONCE_TTL: ${NONCE_TTL:-10m}
+      RATE_LIMIT_AUDIT:  ${RATE_LIMIT_AUDIT:-600}
+      RATE_LIMIT_ERROR:  ${RATE_LIMIT_ERROR:-1200}
+      RATE_LIMIT_LOG:    ${RATE_LIMIT_LOG:-6000}
+      RATE_LIMIT_METRIC: ${RATE_LIMIT_METRIC:-6000}
+    # Coolify's Traefik will route the public domain to this port.
+    expose: ["8080"]
+    restart: unless-stopped
+    labels:
+      # Coolify auto-detects this port for its reverse proxy.
+      - "coolify.port=8080"
+
+  worker:
+    build:
+      context: .
+      target: worker
+    depends_on:
+      nats: { condition: service_healthy }
+      api:  { condition: service_started }
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      POSTGRES_URL: ${POSTGRES_URL:?POSTGRES_URL is required}
+      NATS_URL: nats://nats:4222
+      REDIS_ADDR: redis:6379
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-auditrail}
+      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN:?ADMIN_MASTER_TOKEN is required}
+    restart: unless-stopped
+
+volumes:
+  chdata:
+  natsdata:
+  redisdata:

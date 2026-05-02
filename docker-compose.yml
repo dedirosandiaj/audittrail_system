@@ -1,0 +1,102 @@
+# Local development stack.
+# For Coolify production deployment, use docker-compose.coolify.yml instead.
+#
+# Env vars are interpolated from the shell / .env (auto-loaded by Docker Compose).
+# Provide safe defaults so the file works even without .env.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-auditrail}
+      POSTGRES_USER: ${POSTGRES_USER:-auditrail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auditrail}
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-auditrail}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./migrations/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-sd", "/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: api
+    depends_on:
+      nats:  { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HTTP_ADDR: ":8080"
+      POSTGRES_URL: ${POSTGRES_URL:-postgres://auditrail:auditrail@postgres:5432/auditrail?sslmode=disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      CLICKHOUSE_ADDR: ${CLICKHOUSE_ADDR:-clickhouse:9000}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-auditrail}
+      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN:?ADMIN_MASTER_TOKEN is required}
+    ports: ["8080:8080"]
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: worker
+    depends_on:
+      nats: { condition: service_healthy }
+      api:  { condition: service_started }
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      POSTGRES_URL: ${POSTGRES_URL:-postgres://auditrail:auditrail@postgres:5432/auditrail?sslmode=disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      CLICKHOUSE_ADDR: ${CLICKHOUSE_ADDR:-clickhouse:9000}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-auditrail}
+      ADMIN_MASTER_TOKEN: ${ADMIN_MASTER_TOKEN:?ADMIN_MASTER_TOKEN is required}
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  chdata:
+  natsdata:

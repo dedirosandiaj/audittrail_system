@@ -1,0 +1,289 @@
+openapi: 3.1.0
+info:
+  title: Auditrail — Universal Observability API
+  version: 0.1.0
+  description: |
+    One API to ingest audit trail, error, log, metric, and behavior events from any platform
+    (web, mobile, backend) and any language. Every request is authenticated with an API key
+    and signed with HMAC-SHA256.
+  contact:
+    name: Auditrail
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.auditrail.io
+    description: Production
+
+tags:
+  - name: Ingestion
+  - name: Query
+  - name: Admin
+  - name: System
+
+security:
+  - apiKey: []
+
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      summary: Liveness probe
+      security: []
+      responses: { "200": { description: OK } }
+
+  /readyz:
+    get:
+      tags: [System]
+      summary: Readiness probe (NATS connected)
+      security: []
+      responses:
+        "200": { description: ready }
+        "503": { description: not ready }
+
+  /v1/events:
+    post:
+      tags: [Ingestion]
+      summary: Ingest a single event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Event" }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      tags: [Query]
+      summary: List events (scoped to the caller's application)
+      parameters:
+        - in: query
+          name: actor_id
+          schema: { type: string }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: resource_type
+          schema: { type: string }
+        - in: query
+          name: resource_id
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string, enum: [success, failed] }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: after_id
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  items:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+
+  /v1/events/bulk:
+    post:
+      tags: [Ingestion]
+      summary: Ingest up to 500 events in one call
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 500
+              items: { $ref: "#/components/schemas/Event" }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResponse" }
+
+  /v1/admin/applications:
+    post:
+      tags: [Admin]
+      summary: Register a new application (tenant)
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, type]
+              properties:
+                code: { type: string, example: uPayment }
+                name: { type: string }
+                type: { type: string, enum: [web, mobile, backend] }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+    get:
+      tags: [Admin]
+      summary: List applications
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: OK
+
+  /v1/admin/applications/{id}/rotate-key:
+    post:
+      tags: [Admin]
+      summary: Rotate api_key and secret_key
+      security: [{ adminToken: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+
+  /v1/admin/applications/{id}:
+    delete:
+      tags: [Admin]
+      summary: Revoke application (soft delete)
+      security: [{ adminToken: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: No Content }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: api_key
+      description: |
+        Every request **must also** include:
+        - `X-Timestamp`: RFC 3339 timestamp, within ±5 minutes
+        - `X-Nonce`: unique per request (10 min TTL)
+        - `X-Signature`: `hmac-sha256=<hex>` computed as
+          `HMAC_SHA256(secret, timestamp + "\n" + nonce + "\n" + body)`
+    adminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+
+  schemas:
+    Event:
+      type: object
+      required: [timestamp, category, action]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: Auto-generated if omitted; used for idempotency.
+        timestamp: { type: string, format: date-time }
+        category:
+          type: string
+          enum: [audit, error, log, metric, behavior]
+        severity:
+          type: string
+          enum: [debug, info, warn, error, critical]
+        action:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9_]*)+$"
+          example: payment.transfer
+        actor:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string }
+            ip: { type: string }
+            user_agent: { type: string }
+        resource:
+          type: object
+          properties:
+            type: { type: string }
+            id: { type: string }
+        payload: { type: object, additionalProperties: true }
+        context:
+          type: object
+          properties:
+            app: { type: string }
+            env: { type: string }
+            version: { type: string }
+            hostname: { type: string }
+            trace_id: { type: string }
+            session_id: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: [success, failed]
+
+    IngestResponse:
+      type: object
+      properties:
+        accepted: { type: boolean }
+        event_ids:
+          type: array
+          items: { type: string, format: uuid }
+        count: { type: integer }
+
+    Application:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string }
+        api_key: { type: string }
+        secret_key:
+          type: string
+          description: Returned only on create/rotate.
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { type: object, properties: { error: { type: string } } }
+    Unauthorized:
+      description: Missing/invalid credentials
+      content:
+        application/json:
+          schema: { type: object, properties: { error: { type: string } } }
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema: { type: object, properties: { error: { type: string } } }

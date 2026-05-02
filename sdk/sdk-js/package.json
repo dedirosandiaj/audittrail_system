@@ -1,0 +1,9 @@
+{
+  "name": "@auditrail/sdk",
+  "version": "0.1.0",
+  "description": "Minimal Node.js SDK for the Auditrail Universal Observability API",
+  "main": "index.js",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
